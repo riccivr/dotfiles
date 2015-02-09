@@ -1,0 +1,790 @@
+#!/usr/bin/env python
+
+usage = """
+mpris-remote, written by Nick Welch <nick@incise.org> in the year 2008.
+Author disclaims copyright.  Homepage: http://incise.org/mpris-remote.html
+
+USAGE: mpris-remote [command [args to command]]
+
+COMMANDS:
+
+  [no command]         prints a display of current player status, song playing,
+                       etc.
+
+  prev[ious]           go to previous track
+  next                 go to next track
+  stop                 stop playback
+  play                 start playback
+  pause                pause playback
+  playpause            toggle playback pausing (MPRIS2 only)
+
+  trackinfo            print metadata for current track
+  trackinfo <track#>   print metadata for given track
+  trackinfo '*'        print metadata for all tracks
+
+  volume               print volume
+  volume <0..100>      set volume
+
+  repeat <true|false>  set current track repeat on or off
+
+  loop                 prints whether or not player will loop track list at end
+  loop <true|false>    sets whether or not player will loop track list at end
+
+  random               prints whether or not player will play randomly/shuffle
+  random <true|false>  sets whether or not player will play randomly/shuffle
+
+  addtrack <uri>       add track at specified uri
+                         (valid file types/protocols dependent on player)
+  addtrack <uri> true  add track at specified uri and start playing it now
+                         a uri can also be "-" which will read in filenames
+                         on stdin, one per line.  (this applies to both
+                         variants of addtrack.  the "playnow" variant will
+                         add+play the first track and continue adding the rest.)
+  deltrack <track#>    delete specified track
+  clear                clear playlist
+
+  position             print position within current track
+  seek <time>          seek to position in current track
+                         supported time formats:
+                         hh:mm:ss.ms | mm:ss.ms | ss | ss.ms | .ms
+                         hh:mm:ss    |    hh:mm | x% | x.x[x[x]...]%
+                         all are negatable to compute from end of track,
+                         e.g. -1:00.  the "ss" format can be >60 and the ".ms"
+                         format can be >1000.
+                         <actually all of that is a lie -- right now you can
+                          only pass in an integer as milliseconds>
+
+  tracknum             print track number of current track
+  numtracks            print total number of tracks in track list
+
+  playstatus           print whether the player is playing, paused, or stopped,
+                       and print the random, repeat, and loop settings
+
+  identity             print identity of player (e.g. name and version)
+  quit                 cause player to exit
+
+PLAYER-SPECIFIC COMMANDS:
+
+  CORN:
+
+    play <track#>      play a specific track
+
+ENVIRONMENT VARIABLES:
+
+  MPRIS_REMOTE_PLAYER
+    If unset or set to "*", mpris-remote will communicate with the first player
+    it finds registered under "org.mpris.*" through D-BUS.  If you only have one
+    MPRIS-compliant player running, then this will be fine.  If you have more
+    than one running, you will want to set this variable to the name of the
+    player you want to connect to.  For example, if set to foo, it will try to
+    communicate with the player at "org.mpris.foo" and will fail if nothing
+    exists at that name.
+
+NOTES:
+
+  track numbers when used or displayed by commands always begin at zero, but
+  the informational display when mpris-remote is called with no arguments
+  starts them at one.  (track "1/2" being the last track would make no sense.)
+"""
+
+import os, sys, re, time, urllib2, dbus
+
+org_mpris_re = re.compile('^org\.mpris\.([^.]+)$')
+org_mpris2_re = re.compile('^org\.mpris\.MediaPlayer2\.([^.]+)$')
+
+#returns MPRIS2 players first.
+def possible_names(bus, legacy_only=False):
+    names = bus.list_names()
+    ret = [ name for name in names if org_mpris_re.match(name) ]
+    if not legacy_only:
+        ret = [ name for name in names if org_mpris2_re.match(name)] + ret
+    return ret
+
+def get_mpris_version(bus, player_name):
+    names = [name for name in bus.list_names() if player_name in name]
+    if not names:
+        YourDoingItWrong("%s does not exist on the bus." % player_name)
+
+    if [name for name in names if org_mpris2_re.match(name)]:
+        return 2
+    elif [name for name in names if org_mpris_re.match(name)]:
+        return 1
+    else:
+        raise YourDoingItWrong(
+                "%s is on the bus (at %s) but not MPRIS compatible."
+                % (player_name, names))
+
+# returns first matching player
+def get_player(bus, legacy_only=False):
+    names = possible_names(bus)
+    if not names:
+        print >>sys.stderr, "No MPRIS-compliant player found running."
+        raise SystemExit(1)
+
+    match = org_mpris2_re.match(names[0])
+    if match:
+        return match.group(1), 2
+    else:
+        match = org_mpris_re.match(names[0])
+        return match.group(1), 1
+
+class YouDidItWrong(Exception): pass
+
+# argument type/content validity checkers
+
+class is_boolean(object):
+    type_desc = 'a boolean'
+    def __init__(self, arg):
+        if arg not in ('true', 'false'):
+            raise ValueError
+
+class is_zero_to_100(object):
+    type_desc = 'an integer within [0..100]'
+    def __init__(self, arg):
+        if not 0 <= int(arg) <= 100:
+            raise ValueError
+
+class is_track_num(object):
+    tracklist_len = 0
+    if tracklist_len > 0:
+        type_desc = 'an integer within [0..%d] (current playlist size is %d)' % (self.tracklist_len-1, self.tracklist_len)
+    elif tracklist_len == 0:
+        type_desc = 'an integer within [0..<tracklist length>], ' \
+                    'although the current track list is empty, so ' \
+                    'no track number would currently be valid'
+    else:
+        type_desc = 'an integer within [0..<tracklist length>] (current tracklist length is unavailable)'
+
+    def __init__(self, arg):
+        int(arg)
+        if tracklist_len == -1:
+            return # not much we can do; just assume it's okay to pass along
+        if not 0 <= int(arg) <= tracklist_len-1:
+            raise ValueError
+
+class is_track_num_or_star(object):
+    type_desc = is_track_num.type_desc + "\n\nOR a '*' to indicate all tracks"
+    def __init__(self, arg):
+        if arg != '*':
+            is_track_num(arg)
+
+class is_valid_corn_uri(object):
+    type_desc = 'a valid URI (media file, playlist file, stream URI, or directory)'
+    def __init__(self, arg):
+        if arg.startswith('file://'):
+            arg = urllib2.unquote(arg.partition('file://')[2])
+
+        # arbitrary uri, don't wanna hardcode possible protocols
+        if re.match(r'\w+://.*', arg):
+            return
+
+        if os.path.isfile(arg) or os.path.isdir(arg) or arg == '-':
+            return
+
+        raise ValueError
+
+# when other players are supported more completely, we can have multiple
+# player-specific versions of this.  for now there's just one.
+is_valid_uri = is_valid_corn_uri
+
+# wrong argument(s) explanation decorators
+
+def explain_numargs(*forms):
+    def wrapper(meth):
+        def new(self, *args):
+            if len(args) not in forms:
+                s = ' or '.join(map(str, forms))
+                raise YouDidItWrong("%s takes %s argument(s)." % (meth.func_name, s))
+            return meth(self, *args)
+        new.func_name = meth.func_name
+        return new
+    return wrapper
+
+def explain_argtype(i, typeclass, optional=False):
+    def wrapper(meth):
+        def new(self, *args):
+            if not optional or len(args) > i:
+                try:
+                    typeclass(args[i])
+                except:
+                    raise YouDidItWrong("argument %d to %s must be %s." % (i+1, meth.func_name, typeclass.type_desc))
+            return meth(self, *args)
+        new.func_name = meth.func_name
+        return new
+    return wrapper
+
+# and the core
+
+def print_metadata(dct):
+    for k in sorted(dct.keys()):
+        v = dct[k]
+
+        if k == 'audio-bitrate':
+            v = float(v) / 1000
+            if v % 1 < 0.01:
+                v = int(v)
+            else:
+                v = "%.3f" % v
+
+        if k == 'time':
+            v = "%s (%s)" % (v, format_time(int(v) * 1000).split('.')[0])
+
+        if k == 'mtime':
+            v = "%s (%s)" % (v, format_time(int(v)))
+
+        print "%s: %s" % (k, v)
+
+class Commander(object):
+
+    @explain_numargs(0)
+    def identity(self):
+        print root.Identity()
+
+    @explain_numargs(0)
+    def quit(self):
+        root.Quit()
+
+    # player
+
+    @explain_numargs(0)
+    def prev(self):
+        self.player.Prev()
+
+    @explain_numargs(0)
+    def previous(self):
+        self.player.Previous()
+
+    @explain_numargs(0)
+    def next(self):
+        self.player.Next()
+
+    @explain_numargs(0)
+    def stop(self):
+        self.player.Stop()
+
+    @explain_numargs(0)
+    def play(self):
+        self.player.Play()
+
+    @explain_numargs(0)
+    def pause(self):
+        self.player.Pause()
+
+    @explain_numargs(0, 1)
+    @explain_argtype(0, is_zero_to_100, optional=True)
+    def volume(self, vol=None):
+        if vol is not None:
+            self.player.VolumeSet(int(vol))
+        else:
+            print self.player.VolumeGet()
+
+    @explain_numargs(0)
+    def position(self):
+        print format_time(self.player.PositionGet())
+
+    @explain_numargs(1)
+    @explain_argtype(0, int)
+    def seek(self, pos):
+        self.player.PositionSet(int(pos))
+
+    @explain_numargs(1)
+    @explain_argtype(0, is_boolean)
+    def repeat(self, on):
+        if on == 'true':
+            self.player.Repeat(True)
+        elif on == 'false':
+            self.player.Repeat(False)
+
+    @explain_numargs(0)
+    def playstatus(self):
+        status = self.player.GetStatus()
+        print "playing: %s" % playstatus_from_int(status[0])
+        print "random/shuffle: %s" % ("true" if status[1] else "false")
+        print "repeat track: %s" % ("true" if status[2] else "false")
+        print "repeat list: %s" % ("true" if status[3] else "false")
+
+    @explain_numargs(0, 1)
+    @explain_argtype(0, is_track_num_or_star, optional=True)
+    def trackinfo(self, track=None):
+        if track == '*':
+            for i in range(self.tracklist_len):
+                print_metadata(tracklist.GetMetadata(i))
+                print
+        elif track is not None:
+            print_metadata(tracklist.GetMetadata(int(track)))
+        else:
+            print_metadata(self.player.GetMetadata())
+
+    # tracklist
+
+    @explain_numargs(0)
+    def clear(self):
+        self.player.Stop()
+        for i in range(self.tracklist.GetLength()):
+            self.tracklist.DelTrack(0)
+
+    @explain_numargs(1)
+    @explain_argtype(0, is_track_num)
+    def deltrack(self, pos):
+        self.tracklist.DelTrack(int(pos))
+
+    @explain_numargs(1, 2)
+    @explain_argtype(0, is_valid_uri)
+    @explain_argtype(1, is_boolean, optional=True)
+    def addtrack(self, uri, playnow='false'):
+        if uri == '-':
+            for i, line in enumerate(sys.stdin):
+
+                path = line.rstrip('\r\n')
+                if not (os.path.isfile(path) or os.path.isdir(path)):
+                    raise YouDidItWrong('not a file or directory: %s' % path)
+
+                if bool(playnow) and i == 0:
+                    self.tracklist.AddTrack(path, True)
+                else:
+                    self.tracklist.AddTrack(path, False)
+        else:
+            self.tracklist.AddTrack(uri, bool(playnow))
+
+    @explain_numargs(0)
+    def tracknum(self):
+        print self.tracklist.GetCurrentTrack()
+
+    @explain_numargs(0)
+    def numtracks(self):
+        print self.tracklist.GetLength()
+
+    @explain_numargs(0, 1)
+    @explain_argtype(0, is_boolean, optional=True)
+    def loop(self, on=None):
+        if on == 'true':
+            self.tracklist.SetLoop(True)
+        elif on == 'false':
+            self.tracklist.SetLoop(False)
+        else:
+            try:
+                status = self.player.GetStatus()
+            except dbus.exceptions.DBusException:
+                print >>sys.stderr, "Player does not support checking loop status."
+            else:
+                print "true" if status[3] else "false"
+
+    @explain_numargs(0, 1)
+    @explain_argtype(0, is_boolean, optional=True)
+    def random(self, on=None):
+        if on == 'true':
+            self.tracklist.SetRandom(True)
+        elif on == 'false':
+            self.tracklist.SetRandom(False)
+        else:
+            try:
+                status = self.player.GetStatus()
+            except dbus.exceptions.DBusException:
+                print >>sys.stderr, "Player does not support checking random status."
+            else:
+                print "true" if status[2] else "false"
+
+    def print_nicey_nice(self):
+        # to be compatible with a wide array of implementations (some very
+        # incorrect/incomplete), we have to do a LOT of extra work here.
+
+        try:
+            status = self.player.GetStatus()
+        except dbus.exceptions.DBusException:
+            status = None
+
+        try:
+            status[0] # dragon player returns a single int, which is wrong
+        except TypeError:
+            status = None
+
+        try:
+            curtrack = self.tracklist.GetCurrentTrack()
+        except dbus.exceptions.DBusException:
+            curtrack = None
+
+        try:
+            pos = self.player.PositionGet()
+        except dbus.exceptions.DBusException:
+            pos = None
+
+        try:
+            meta = dict(self.player.GetMetadata())
+        except dbus.exceptions.DBusException:
+            meta = {}
+
+        if 'mtime' in meta:
+            mtime = int(meta['mtime'])
+            if abs(mtime - time.time()) < 60*60*24*365*5:
+                # if the mtime is within 5 years of right now, which would mean the
+                # song is thousands of hours long, then i'm gonna assume that the
+                # player is incorrectly using this field for the file's mtime, not
+                # the song length. (bmpx does this as of january 2008)
+                del meta['mtime']
+
+                # and also, if we know it's bmp, then we can swipe the time field
+                if self.player_name == 'bmp':
+                    meta['mtime'] = meta['time'] * 1000
+
+        have_status = (status is not None)
+        have_curtrack = (curtrack is not None)
+        have_listlen = (self.tracklist_len >= 0)
+        have_player_info = (have_status or have_curtrack or have_listlen)
+
+        have_pos = (pos is not None)
+        have_mtime = ('mtime' in meta)
+        have_tracknum = ('tracknumber' in meta)
+        have_song_info = (have_pos or have_mtime or have_tracknum)
+
+        ##
+
+        if have_player_info:
+            sys.stdout.write('[')
+
+        if have_status:
+            sys.stdout.write("%s" % playstatus_from_int(status[0]))
+            if have_curtrack:
+                sys.stdout.write(' ')
+
+        if have_curtrack:
+            sys.stdout.write(str(curtrack+1))
+            if have_listlen:
+                sys.stdout.write('/')
+
+        if have_listlen:
+            sys.stdout.write(str(self.tracklist_len))
+
+        if have_player_info:
+            sys.stdout.write(']')
+
+        ##
+
+        if have_player_info and have_song_info:
+            sys.stdout.write(' ')
+
+        ##
+
+        if have_pos or have_mtime:
+            sys.stdout.write('@ ')
+            if have_pos:
+                sys.stdout.write(format_time(pos).split('.')[0])
+            elif have_mtime:
+                sys.stdout.write('?')
+
+            if have_mtime:
+                sys.stdout.write('/')
+                sys.stdout.write(format_time(meta['mtime']).split('.')[0])
+
+        if have_tracknum:
+            sys.stdout.write(' - #%s' % meta['tracknumber'])
+
+        if have_player_info or have_song_info:
+            sys.stdout.write('\n')
+
+        ##
+
+        if 'artist' in meta:
+            print '  artist:', meta['artist']
+        if 'title' in meta:
+            print '  title:', meta['title']
+        if 'album' in meta:
+            print '  album:', meta['album']
+
+        if have_status:
+            print '[repeat %s] [random %s] [loop %s]' % (
+                "on" if status[2] else "off",
+                "on" if status[1] else "off",
+                "on" if status[3] else "off",
+            )
+
+
+class Commander1(Commander):
+
+    def __init__(self, bus, player_name):
+
+        try:
+            root_obj      = bus.get_object('org.mpris.%s' % player_name, '/')
+            player_obj    = bus.get_object('org.mpris.%s' % player_name, '/Player')
+            tracklist_obj = bus.get_object('org.mpris.%s' % player_name, '/TrackList')
+        except dbus.exceptions.DBusException, e:
+            if e.get_dbus_name() != 'org.freedesktop.DBus.Error.ServiceUnknown':
+                raise
+
+            print >>sys.stderr, 'Player "%s" was not found to be running.' % player_name
+            names = possible_names(bus)
+            if names:
+                print >>sys.stderr, "But the following players were found to be running:"
+                for n in names:
+                    print >>sys.stderr, "    %s" % n.replace("org.mpris.", "")
+            print >>sys.stderr, 'If you meant to use one of those players, ' \
+                                'set $MPRIS_REMOTE_PLAYER accordingly.'
+            raise SystemExit(1)
+
+        root      = dbus.Interface(root_obj,      dbus_interface='org.freedesktop.MediaPlayer')
+        player    = dbus.Interface(player_obj,    dbus_interface='org.freedesktop.MediaPlayer')
+        tracklist = dbus.Interface(tracklist_obj, dbus_interface='org.freedesktop.MediaPlayer')
+
+        try:
+            self.tracklist_len = tracklist.GetLength()
+        except dbus.exceptions.DBusException:
+            # GetLength() not supported by player (BMPx for example)
+            self.tracklist_len = -1
+
+        self.player_name = player_name
+        self.root = root
+        self.player = player
+        self.tracklist = tracklist
+
+
+# player-specific Commanders, only one for now
+
+class Commander_corn(Commander1):
+    def __init__(self, bus, player_name):
+        super(Commander_corn, self).__init__(bus, player_name)
+        assert player_name == 'corn'
+        corn_obj = bus.get_object('org.mpris.corn', '/Corn')
+        self.corn = dbus.Interface(corn_obj, dbus_interface='org.corn.CornPlayer')
+
+    @explain_numargs(0)
+    def clear(self):
+        self.corn.Clear()
+
+    @explain_numargs(0, 1)
+    @explain_argtype(0, is_track_num, optional=True)
+    def play(self, pos=None):
+        if pos is None:
+            super(Commander_corn, self).play()
+        else:
+            self.corn.PlayTrack(int(pos))
+
+    @explain_numargs(2)
+    @explain_argtype(0, is_track_num, int)
+    def move(self, from_, to):
+        self.corn.Move(int(from_), int(to))
+
+class TrackListNotSupported(object):
+    def __getattr__(self, name):
+        def raiser(*args, **kwargs):
+            YouDidItWrong("Track list not supported. Sorry.")
+        return raiser
+
+class Commander2(Commander):
+
+    def __init__(self, bus, player_name):
+
+        try:
+            player_obj    = bus.get_object('org.mpris.MediaPlayer2.%s' % player_name, '/org/mpris/MediaPlayer2')
+            #tracklist_obj = bus.get_object('org.mpris.MediaPlayer2.%s' % player_name, '/TrackList')
+        except dbus.exceptions.DBusException, e:
+            if e.get_dbus_name() != 'org.freedesktop.DBus.Error.ServiceUnknown':
+                raise
+
+            print >>sys.stderr, 'Player "%s" was not found to be running.' % player_name
+            names = possible_names(bus)
+            if names:
+                print >>sys.stderr, "But the following players were found to be running:"
+                for n in names:
+                    print >>sys.stderr, "    %s" % n.replace("org.mpris.", "")
+            print >>sys.stderr, 'If you meant to use one of those players, ' \
+                                'set $MPRIS_REMOTE_PLAYER accordingly.'
+            raise SystemExit(1)
+
+        player    = dbus.Interface(player_obj,    dbus_interface='org.mpris.MediaPlayer2.Player')
+
+        try:
+            #self.tracklist_len = tracklist.GetLength()
+            raise dbus.exceptions.DBusException
+        except dbus.exceptions.DBusException:
+            # GetLength() not supported by player (BMPx for example)
+            self.tracklist_len = -1
+
+        self.player_name = player_name
+        self.player = player
+        self.tracklist = TrackListNotSupported()
+
+
+    @explain_numargs(0)
+    def playpause(self):
+        self.player.PlayPause()
+
+    def print_nicey_nice(self):
+        try:
+            props = self.player.GetAll('org.mpris.MediaPlayer2.Player',
+                    dbus_interface='org.freedesktop.DBus.Properties')
+        except dbus.exceptions.DBusException:
+            props = {}
+            
+        status = props.get('PlaybackStatus', None)
+        
+        meta = props.get('Metadata', {})
+
+        curtrack = None # meta.get("xesam:trackNumber", None)
+        pos = props.get("Position", 0) or None
+
+        if 'mpris:length' in meta:
+            mtime = int(meta['mpris:length'])
+            if abs(mtime - time.time()) < 60*60*24*365*5:
+                # if the mtime is within 5 years of right now, which would mean the
+                # song is thousands of hours long, then i'm gonna assume that the
+                # player is incorrectly using this field for the file's mtime, not
+                # the song length. (bmpx does this as of january 2008)
+                del meta['mpris:length']
+
+                # and also, if we know it's bmp, then we can swipe the time field
+                if self.player_name == 'bmp':
+                    meta['mpris:length'] = meta['time'] * 1000
+
+        have_status = (status is not None)
+        have_curtrack = (curtrack is not None)
+        have_listlen = (self.tracklist_len >= 0)
+        have_player_info = (have_status or have_curtrack or have_listlen)
+
+        have_pos = (pos is not None)
+        have_mtime = ('mpris:length' in meta)
+        have_tracknum = False # ('xesam:trackNumber' in meta)
+        have_song_info = (have_pos or have_mtime or have_tracknum)
+
+        ##
+
+        if have_player_info:
+            sys.stdout.write('[')
+
+        if have_status:
+            sys.stdout.write("%s" % status)
+            if have_curtrack:
+                sys.stdout.write(' ')
+
+        if have_curtrack:
+            sys.stdout.write(str(curtrack+1))
+            if have_listlen:
+                sys.stdout.write('/')
+
+        if have_listlen:
+            sys.stdout.write(str(self.tracklist_len))
+
+        if have_player_info:
+            sys.stdout.write(']')
+
+        ##
+
+        if have_player_info and have_song_info:
+            sys.stdout.write(' ')
+
+        ##
+
+        if have_pos or have_mtime:
+            sys.stdout.write('@ ')
+            if have_pos:
+                sys.stdout.write(format_time(pos).split('.')[0])
+            elif have_mtime:
+                sys.stdout.write('?')
+
+            if have_mtime:
+                sys.stdout.write('/')
+                sys.stdout.write(format_time(meta['mpris:length']/1000).split('.')[0])
+
+        if have_tracknum:
+            sys.stdout.write(' - #%s' % meta['xesam:trackNumber'])
+
+        if have_player_info or have_song_info:
+            sys.stdout.write('\n')
+
+        ##
+
+        if 'xesam:artist' in meta:
+            print '  artist:', meta['xesam:artist']
+        if 'xesam:title' in meta:
+            print '  title:', meta['xesam:title']
+        if 'xesam:album' in meta:
+            print '  album:', meta['xesam:album']
+
+        repeat = props.get('LoopStatus', None)
+        if repeat is not None:
+            print '[repeat %s]' % repeat
+        random = props.get('Shuffle', None)
+        if random is not None:
+            '[random %s]' % ("on" if random else "off")
+
+    def notify(self):
+
+        try:
+            props = self.player.GetAll('org.mpris.MediaPlayer2.Player',
+                    dbus_interface='org.freedesktop.DBus.Properties')
+        except dbus.exceptions.DBusException:
+            props = {}
+
+        status = props.get('PlaybackStatus', None) or "Maybe Playing"
+
+        meta = props.get('Metadata', {})
+        info = []
+        if meta.get('xesam:title'):
+            info.append('"%s"' % meta['xesam:title'])
+        if meta.get('xesam:artist'):
+            info.append('by %s' % meta['xesam:artist'])
+        if meta.get('xesam:album'):
+            info.append('(from %s)' % meta['xesam:album'])
+
+        import pynotify
+
+        pynotify.init("mpris-remote")
+        n = pynotify.Notification(status)
+        n.set_property('body', '\n'.join(info))
+        n.show()
+
+def format_time(rawms):
+    min = rawms / 1000 / 60
+    sec = rawms / 1000 % 60
+    ms = rawms % 1000
+    return "%d:%02d.%03d" % (min, sec, ms)
+
+def playstatus_from_int(n):
+    return ['playing', 'paused', 'stopped'][n]
+
+def main(method_name, args, legacy_only=False, player_name='*',
+         version=0, notify=False,
+         **_bullshit # why values isn't a dict I don't know.
+         ):
+    bus = dbus.SessionBus()
+
+    if player_name == '*':
+        player_name = os.environ.get('MPRIS_REMOTE_PLAYER', '*')
+    if player_name == '*':
+        player_name, version = get_player(bus, legacy_only)
+
+    if version == 0:
+        version = get_mpris_version(bus, player_name)
+
+    if version == 2:
+        cmdr_factory = Commander2
+    elif 'Commander_'+player_name in globals():
+        cmdr_factory = globals()['Commander_'+player_name]
+    else:
+        cmdr_factory = Commander1
+    try:
+        cmdr = cmdr_factory(bus, player_name)
+        getattr(cmdr, method_name)(*args)
+    except YouDidItWrong, e:
+        print >>sys.stderr, e
+        raise SystemExit(1)
+    except KeyboardInterrupt:
+        raise SystemExit(2)
+
+    if notify:
+        main('notify', [],
+            legacy_only=legacy_only, player_name=player_name,
+            version=version)
+
+if __name__ == '__main__':
+    import optparse
+    parser = optparse.OptionParser()
+    parser.add_option('--legacy', dest='legacy_only',
+            action="store_true", default=False)
+    parser.add_option('--player', dest='player_name',
+            default='*')
+    parser.usage = usage
+    parser.add_option('--notify', dest='notify',
+            action="store_true", default=False)
+    values, args = parser.parse_args()
+    if not args:
+        args = ['print_nicey_nice']
+    main(args[0], args[1:], **vars(values))

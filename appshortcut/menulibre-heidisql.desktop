@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=HeidiSQL
+Comment=(Wine) MySQL, MSSQL, PostgreSQL made easy
+Icon=heidisql
+Exec=wine /home/ricci/.wine/drive_c/Program\ Files/HeidiSQL/heidisql.exe 
+NoDisplay=false
+Categories=Development;
+StartupWMClass=heidisql.exe
+StartupNotify=false
+Terminal=false
