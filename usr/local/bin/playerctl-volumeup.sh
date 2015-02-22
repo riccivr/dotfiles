@@ -1,7 +1,7 @@
 #!/bin/bash
 # sets the volume incrementally, check first if spotify is running
 
-ps cax | grep spotify > /dev/null
+ps cax | grep 'spotify$' > /dev/null
 if [ $? -eq 0 ]; then
 	xdotool key --window $(xdotool search --name "Spotify (Free |Premium |Unlimited )?- Linux Preview"|head -n1) "ctrl+Up"
 else
