@@ -33,4 +33,3 @@ source /home/ricci/.config/fish/functions/z.fish
 #alias goes here
 
 #docker specific aliasses
-  
