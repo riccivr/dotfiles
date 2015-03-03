@@ -33,3 +33,4 @@ source /home/ricci/.config/fish/functions/z.fish
 #alias goes here
 
 #docker specific aliasses
+alias docker-laravel-composer="docker run --privileged=true --volumes-from learning-laravel-data --rm dylanlindgren/docker-laravel-composer" 
