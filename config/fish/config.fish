@@ -1,3 +1,9 @@
+#remove fish greeting message
+set fish_greeting ""
+
+#run tmux at startup
+test $TERM != "screen"; and exec tmux
+
 set -x PATH /usr/local/opt/coreutils/libexec/gnubin $HOME/bin /usr/local/bin /usr/bin /bin /usr/sbin /sbin
 
 set -x GOROOT /usr/local/opt/go/libexec
@@ -30,7 +36,19 @@ set -x LC_COLLATE C
 #source functions/z.fish
 source /home/ricci/.config/fish/functions/z.fish
 
-#alias goes here
+#sourcing autojump
+if test -e ~/.autojump/etc/profile.d/autojump.fish
+    . ~/.autojump/etc/profile.d/autojump.fish
+end
 
-#docker specific aliasses
-alias docker-laravel-composer="docker run --privileged=true --volumes-from learning-laravel-data --rm dylanlindgren/docker-laravel-composer" 
+#alias goes here
+alias install="sudo apt-get install"
+alias remove="sudo apt-get remove"
+alias purge="sudo apt-get purge"
+alias update="sudo apt-get update"
+alias upgrade="sudo apt-get upgrade"
+alias dupgrade="sudo apt-get dist-upgrade"
+alias ppa="sudo apt-add-repository"
+alias autoremove="sudo apt-get autoremove"
+
+
