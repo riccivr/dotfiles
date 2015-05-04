@@ -13,7 +13,7 @@ file_to_monitor="uris_to_load.txt"
 file_to_monitor_temp=".temp_uris"
 folder_download_location="./Music/"
 temp_cover="TEMP_COVER.png"
-remove_flac_files="no"
+remove_flac_files="yes"
 sound_input="alsa_output.pci-0000_00_14.2.analog-stereo.monitor"
 
 
