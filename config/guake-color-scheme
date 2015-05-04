@@ -4,3 +4,6 @@ background color #002B36
 color palette
 guake solarized
 https://github.com/coolwanglu/guake-colors-solarized
+
+fish command color #00D7D7
+fish parameter color #D7FFFF
