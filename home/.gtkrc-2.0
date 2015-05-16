@@ -1,10 +1,10 @@
-style "darkback"
+style "numixsiva"
 {
-	bg[NORMAL] = "#404040"
+	bg[NORMAL] = "#555555"
 	bg[ACTIVE] = "#606060"
 	bg[PRELIGHT] = "#808080"
 	fg[NORMAL] = "#ccc"
 	fg[ACTIVE] = "#fff"
 	fg[PRELIGHT] = "#fff"
 }
-widget "whiskermenu-window*" style "darkback"
+widget "whiskermenu-window*" style "numixsiva"
