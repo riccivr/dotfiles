@@ -9,6 +9,7 @@ set fish_greeting ""
 source /home/ricci/.config/fish/functions/z.fish
 
 #alias goes here
+alias clipboard="xclip -se c"
 alias install="sudo apt-get install"
 alias remove="sudo apt-get remove"
 alias purge="sudo apt-get purge"
