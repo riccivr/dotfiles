@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Photoshop CS6
+Icon=AdobePhotoshop
+Exec=/opt/cxoffice/bin/wine --bottle "photoshop" --cx-app Photoshop.exe 
+NoDisplay=false
+Categories=Graphics;
+StartupWMClass=Photoshop.exe
+StartupNotify=true
+Terminal=false

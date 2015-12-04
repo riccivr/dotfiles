@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Navicat
+Comment=mostly all the relational databases
+Icon=navicat
+Exec=/opt/cxoffice/bin/wine --bottle "navicat" --cx-app navicat.exe 
+NoDisplay=false
+Categories=Development;
+StartupWMClass=navicat.exe
+StartupNotify=true
+Terminal=false

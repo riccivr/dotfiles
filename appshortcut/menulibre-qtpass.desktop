@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=QtPass
+Comment=front end for pass, the standard UNIX password manager
+Icon=1password
+Exec=qtpass
+NoDisplay=false
+Categories=Other;
+StartupNotify=true
+Terminal=false
