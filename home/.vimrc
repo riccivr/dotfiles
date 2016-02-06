@@ -3,29 +3,28 @@ set shell=/bin/bash
 
 set nocompatible
 filetype off
-set rtp+=~/.vim/bundle/vundle/
-call vundle#rc()
-Plugin 'gmarik/vundle'
 
-Plugin 'powerline/fonts'
-Plugin 'tpope/vim-surround'
-Plugin 'gcmt/breeze.vim'
-Plugin 'kien/ctrlp.vim'
-Plugin 'SirVer/ultisnips'
-Plugin 'scrooloose/nerdcommenter'
-Plugin 'vim-airline/vim-airline'
-Plugin 'airblade/vim-gitgutter'
-Plugin 'terryma/vim-multiple-cursors'
-Plugin 'mattn/emmet-vim'
+call plug#begin('~/.vim/plugged')
 
-" Color Themes
-Plugin 'NLKNguyen/papercolor-theme'
-set t_Co=256   " This is may or may not needed.
-set background=dark
-colorscheme PaperColor
+Plug 'powerline/fonts'
+Plug 'tpope/vim-surround'
+Plug 'gcmt/breeze.vim'
+Plug 'kien/ctrlp.vim'
+Plug 'SirVer/ultisnips' | Plug 'honza/vim-snippets'
+Plug 'scrooloose/nerdcommenter'
+Plug 'vim-airline/vim-airline'
+Plug 'airblade/vim-gitgutter'
+Plug 'terryma/vim-multiple-cursors'
+Plug 'mattn/emmet-vim'
+Plug 'Shougo/unite.vim' | Plug 'Shougo/vimfiler.vim'
 
-" Syntax Highlighting plugins
-Plugin 'pangloss/vim-javascript'
+" colorscheme
+Plug 'NLKNguyen/papercolor-theme'
+
+" syntax highlighting plugins
+Plug 'pangloss/vim-javascript'
+
+call plug#end()
 
 """"""""
 if has('autocmd')
@@ -34,6 +33,12 @@ endif
 if has('syntax') && !exists('g:syntax_on')
   syntax enable
 endif
+
+set t_Co=256
+set background=dark
+colorscheme PaperColor
+let g:PaperColor_Dark_Override = { 'background' : '#12292F' }
+hi Normal ctermbg=none
 
 " Use :help 'option' to see the documentation for the given option.
 set autoindent
@@ -80,6 +85,7 @@ map Q gq
 " In many terminal emulators the mouse works just fine, thus enable it.
 if has('mouse')
   set mouse=a
+  set ttymouse=xterm2
 endif
 
 " do not history when leavy buffer
@@ -88,8 +94,9 @@ set hidden
 " highlight current line
 set cursorline
 
-" powerline font
-set guifont=Inconsolata-dz\ for\ Powerline\ Medium\ 12
+" set gui font
+set guifont=Meslo\ LG\ M\ DZ\ for\ Powerline:h12
+
 
 set nobackup
 set nowritebackup
@@ -159,7 +166,7 @@ nnoremap <Leader>o :set nopaste<CR>
 noremap  <Leader>g :GitGutterToggle<CR>
 
 " NERDcommenter mappings
-vnoremap ,c :call NERDComment(0,"toggle")<CR>
+vnoremap ,x :call NERDComment(0,"toggle")<CR>
 
 " this machine config
 if filereadable(expand("~/.vimrc.local"))
