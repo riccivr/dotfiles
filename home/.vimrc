@@ -1,6 +1,5 @@
 set shell=/bin/bash
 
-
 set nocompatible
 filetype off
 
@@ -9,7 +8,7 @@ call plug#begin('~/.vim/plugged')
 Plug 'powerline/fonts'
 Plug 'tpope/vim-surround'
 Plug 'gcmt/breeze.vim'
-Plug 'kien/ctrlp.vim'
+Plug 'kien/ctrlp.vim' | Plug 'dbeecham/ctrlp-commandpalette.vim'
 Plug 'SirVer/ultisnips' | Plug 'honza/vim-snippets'
 Plug 'scrooloose/nerdcommenter'
 Plug 'vim-airline/vim-airline'
@@ -17,12 +16,16 @@ Plug 'airblade/vim-gitgutter'
 Plug 'terryma/vim-multiple-cursors'
 Plug 'mattn/emmet-vim'
 Plug 'Shougo/unite.vim' | Plug 'Shougo/vimfiler.vim'
+Plug 'Shougo/neocomplete.vim'
+Plug 'severin-lemaignan/vim-minimap'
+Plug 'tmhedberg/matchit'
 
 " colorscheme
 Plug 'NLKNguyen/papercolor-theme'
 
 " syntax highlighting plugins
 Plug 'pangloss/vim-javascript'
+Plug 'hail2u/vim-css3-syntax'
 
 call plug#end()
 
@@ -34,6 +37,7 @@ if has('syntax') && !exists('g:syntax_on')
   syntax enable
 endif
 
+" colorscheme related
 set t_Co=256
 set background=dark
 colorscheme PaperColor
@@ -97,6 +101,15 @@ set cursorline
 " set gui font
 set guifont=Meslo\ LG\ M\ DZ\ for\ Powerline:h12
 
+" load neocomplete
+let g:neocomplete#enable_at_startup = 1
+
+" load vimfiler as default
+let g:vimfiler_as_default_explorer = 1
+
+" emmet
+let g:user_emmet_expandabbr_key = '<c-e>'
+let g:use_emmet_complete_tag = 1
 
 set nobackup
 set nowritebackup
@@ -114,6 +127,9 @@ set completeopt=menuone,longest,preview
 
 " CtrlP
 set wildignore+=*/.git/*,*/.hg/*,*/.svn/* 
+
+" CtrlPCommandPalette
+nnoremap <S-p> :CtrlPCommandPalette<cr>
 
 " Ultisnip
 " NOTE: <f1> otherwise it overrides <tab> forever
