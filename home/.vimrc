@@ -19,6 +19,7 @@ Plug 'Shougo/unite.vim' | Plug 'Shougo/vimfiler.vim'
 Plug 'Shougo/neocomplete.vim'
 Plug 'severin-lemaignan/vim-minimap'
 Plug 'tmhedberg/matchit'
+Plug 'KabbAmine/vullScreen.vim'
 
 " colorscheme
 Plug 'NLKNguyen/papercolor-theme'
@@ -41,7 +42,7 @@ endif
 set t_Co=256
 set background=dark
 colorscheme PaperColor
-let g:PaperColor_Dark_Override = { 'background' : '#12292F' }
+"let g:PaperColor_Dark_Override = { 'background' : '#12292F' }
 hi Normal ctermbg=none
 
 " Use :help 'option' to see the documentation for the given option.
@@ -99,7 +100,7 @@ set hidden
 set cursorline
 
 " set gui font
-set guifont=Meslo\ LG\ M\ DZ\ for\ Powerline:h12
+set guifont=Meslo\ LG\ M\ DZ\ for\ Powerline\ 12
 
 " load neocomplete
 let g:neocomplete#enable_at_startup = 1
