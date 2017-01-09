@@ -2,5 +2,6 @@
 
 while [ 1 ]; do
   xdotool mousemove 308 601 click 1 &
-  sleep 5
+  sleep $(( ( RANDOM % 10 )  + 1 ))
+  xdotool key --delay 1000 Page_Down Page_Up Page_Down
 done

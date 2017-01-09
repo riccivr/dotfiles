@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Illustrator CS6
+Icon=Adobeillustrator
+Exec=/opt/cxoffice/bin/wine --bottle "photoshop" --cx-app Illustrator.exe 
+NoDisplay=false
+Categories=Graphics;
+StartupWMClass=Illustrator.exe
+StartupNotify=true
+Terminal=false

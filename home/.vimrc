@@ -23,6 +23,8 @@ Plug 'KabbAmine/vullScreen.vim'
 
 " colorscheme
 Plug 'NLKNguyen/papercolor-theme'
+" colorscheme for gvim
+Plug 'jscappini/material.vim'
 
 " syntax highlighting plugins
 Plug 'pangloss/vim-javascript'

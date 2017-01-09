@@ -21,5 +21,4 @@ alias ppa-remove="sudo apt-add-repository --remove"
 alias autoremove="sudo apt-get autoremove"
 alias tmux="tmux -2"
 alias vaser="cd /home/ricci/code"
-alias nethogs="sudo nethogs wlan0"
 

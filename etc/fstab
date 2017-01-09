@@ -6,7 +6,7 @@
 #
 # <file system> <mount point>   <type>  <options>       <dump>  <pass>
 # / was on /dev/sda3 during installation
-UUID=1f2de19e-f14b-4d76-ba75-8940673bbb82 /               ext4    errors=remount-ro 0       1
+/dev/sda1 /               ext4    defaults,noatime,discard 0 1       1
 
 # line added by ricci to mount documents partition
-/dev/sda4   /media/ricci/documents ntfs-3g    permissions,locale=en_US.utf8    0   2
+# /dev/sdb3   /media/ricci/documents ntfs-3g    permissions,locale=en_US.utf8    0   2
